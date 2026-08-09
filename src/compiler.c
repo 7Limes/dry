@@ -17,6 +17,8 @@ const char *START_PROC_NAME = "start";
 const char *TICK_PROC_NAME = "tick";
 const char *END_LABEL_NAME = "__end";
 
+const char *CALL_INSTRUCTION_NAME = "call";
+
 typedef struct {
     size_t address, size;
 } VarData;
@@ -243,6 +245,80 @@ int initial_pass(CompilerContext *ctx, CtxProgram *program) {
     }
 
     da_append(&ctx->program_nodes, program);
+}
+
+
+// Finds a procedure by name
+CtxProcedure* find_procedure(const DynamicArray *procedures, const char *proc_name) {
+    for (size_t i = 0; i < procedures->length; i++) {
+        CtxProcedure *proc = procedures->data[i];
+        char *name = get_token_string(proc->name);
+        if (strcmp(name, proc_name) == 0) {
+            return proc;
+        }
+        free(name);
+    }
+
+    return NULL;
+}
+
+
+// Recursively collects a set of all procedure names which are called from the root procedure with name `proc_name`
+void get_seen_procedures(Map *seen, const DynamicArray *all_procs, const char *proc_name) {
+    CtxProcedure *proc = find_procedure(all_procs, proc_name);
+    if (proc == NULL) {
+        return;
+    }
+    map_add(seen, proc_name, NULL);
+
+    size_t statement_count = proc->block->statement_list->statement_count;
+
+    for (size_t i = 0; i < statement_count; i++) {
+        CtxStatement *statement = proc->block->statement_list->statements[i];
+        if (statement->kind == INSTRUCTION) {
+            CtxInstruction *ins = statement->statement.instruction;
+            char *ins_name = get_token_string(ins->name);
+            if (
+                strcmp(ins_name, CALL_INSTRUCTION_NAME) == 0 &&
+                ins->arg_count > 0 &&
+                ins->args[0].kind == NAME
+            ) {
+                char *called_proc_name = get_token_string(ins->args[0]);
+                if (map_get(NULL, seen, called_proc_name) != 0) {  // Proc hasn't been seen before
+                    get_seen_procedures(seen, all_procs, called_proc_name);
+                }
+                free(called_proc_name);
+            }
+            free(ins_name);
+        }
+    }
+}
+
+
+int filter_pass(CompilerContext *ctx) {
+    Map seen_procs;
+    map_create(&seen_procs, 16);
+    get_seen_procedures(&seen_procs, &ctx->procedures, START_PROC_NAME);
+    get_seen_procedures(&seen_procs, &ctx->procedures, TICK_PROC_NAME);
+
+    // Create a new list containing only the procedures that were used
+    DynamicArray new_proc_list = {0};
+    for (size_t i = 0; i < ctx->procedures.length; i++) {
+        CtxProcedure *proc = ctx->procedures.data[i];
+        char *proc_name = get_token_string(proc->name);
+        if (map_get(NULL, &seen_procs, proc_name) == 0) {
+            da_append(&new_proc_list, proc);
+        }
+        free(proc_name);
+    }
+
+    // Reassign with the filtered list
+    da_free(&ctx->procedures);
+    ctx->procedures = new_proc_list;
+
+    map_free(&seen_procs);
+
+    return 0;
 }
 
 

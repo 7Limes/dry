@@ -24,11 +24,28 @@ int da_append(DynamicArray *arr, void *value) {
     return 0;
 }
 
+
+int da_pop(DynamicArray *arr, void **dest) {
+    if (arr->length == 0) {
+        return 1;
+    }
+
+    arr->length--;
+
+    if (dest != NULL) {
+        *dest = arr->data[arr->length];
+    }
+
+    return 0;
+}
+
+
 void da_free(const DynamicArray *arr) {
     if (arr->capacity != 0) {
         free(arr->data);
     }
 }
+
 
 void da_free_all(const DynamicArray *arr) {
     if (arr->capacity == 0) {

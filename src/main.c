@@ -32,10 +32,16 @@ int compile_program(const char *infile, const char *outfile) {
 
     printf("Performing initial pass...\n");
     if (initial_pass(ctx, program)) goto error;
+
+    printf("Performing filter pass...\n");
+    if (filter_pass(ctx)) goto error;
+
     printf("Performing memory pass...\n");
     if (memory_pass(ctx)) goto error;
+
     printf("Performing codegen pass...\n");
     if (codegen_pass(ctx, outfile)) goto error;
+    
     printf("Compilation completed.\n");
     goto cleanup;
 

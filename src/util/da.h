@@ -12,6 +12,7 @@ typedef struct {
 
 
 int da_append(DynamicArray *arr, void *value);
+int da_pop(DynamicArray *arr, void **dest);
 void da_free(const DynamicArray *arr);
 void da_free_all(const DynamicArray *arr);
 
