@@ -239,6 +239,7 @@ CtxLoopBlock* parse_loop_block(ParserContext *ctx) {
     }
 
     CtxStatementList *statement_list = parse_statement_list(ctx, RBRACKET);
+    if (ctx->error) return NULL;
 
     CtxLoopBlock *block = malloc(sizeof(CtxLoopBlock));
     block->lbracket = lbracket;
@@ -313,6 +314,7 @@ CtxBlock* parse_block(ParserContext *ctx) {
     if (next_token(&lbrace, ctx, LBRACE)) return NULL;
 
     CtxStatementList *statement_list = parse_statement_list(ctx, RBRACE);
+    if (ctx->error) return NULL;
 
     CtxBlock *block = malloc(sizeof(CtxBlock));
     block->statement_list = statement_list;

@@ -12,8 +12,9 @@ typedef struct {
     Map constants;    // Map[str, int32_t]                 Maps constant names -> constant values
     Map globals;      // Map[str, VarData*]                Maps global names -> global addresses
     DynamicArray load_statements;  // DynamicArray[CtxLoadStatement]
-    Map locals;       // Map[str, Map[str, VarData*]]        Maps proc names to a map of var name -> var data
+    Map locals;       // Map[str, Map[str, VarData*]]      Maps proc names to a map of var name -> var data
     Map proc_params;  // Map[str, DynamicArray[size_t]]    Maps proc names -> list of its parameter addresses
+    Map kept_names;   // Map[str, NULL]                    A set of names that will not be replaced with int values 
 
     DynamicArray procedures;
     DynamicArray program_nodes;

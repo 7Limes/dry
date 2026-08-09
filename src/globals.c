@@ -5,8 +5,6 @@ const char *COL_RESET = "\x1b[0m";
 
 
 const char *TOKEN_KINDS[] = {
-    "WHITESPACE",
-    "COMMENT",
     "LOAD",
     "DEFINE",
     "INCLUDE",
@@ -67,4 +65,21 @@ void init_instruction_lookup() {
     map_add_int(m, "call", 1);
     map_add_int(m, "brkeq", 2);
     map_add_int(m, "brkne", 2);
+    map_add_int(m, "brkge", 2);
+    map_add_int(m, "brkle", 2);
+    map_add_int(m, "brk", 0);
+}
+
+
+void set_default_constants(Map *constants) {
+    map_add_int(constants, "NEG1", 0x2);
+    map_add_int(constants, "CONTROL1", 0x3);
+    map_add_int(constants, "CONTROL2", 0x4);
+    map_add_int(constants, "A", 0x5);
+    map_add_int(constants, "B", 0x6);
+    map_add_int(constants, "UP", 0x7);
+    map_add_int(constants, "DOWN", 0x8);
+    map_add_int(constants, "LEFT", 0x9);
+    map_add_int(constants, "RIGHT", 0xa);
+    map_add_int(constants, "DELTA", 0xb);
 }

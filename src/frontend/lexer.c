@@ -7,9 +7,6 @@
 
 
 const char *RAW_TOKEN_EXPRESSIONS[] = {
-    "^[[:space:]]+",
-    "^//.*$",
-
     "^load",
     "^define",
     "^include",
@@ -30,17 +27,22 @@ const char *RAW_TOKEN_EXPRESSIONS[] = {
     "^\"[^\"]*\"",
 };
 
+const char *IGNORED_EXPRESSIONS[] = {
+    "^[[:space:]]+",
+    "^\\/\\/[^\n]*"
+};
 
-void count_lines_cols(size_t *lines, size_t *cols, const char *str, size_t length) {
-    *lines = 0;
-    *cols = 0;
+
+void update_lexer_pos(Lexer *lexer, size_t length) {
+    const char *str = lexer->source + lexer->index;
+
     for (size_t i = 0; i < length; i++) {
         if (str[i] == '\n') {
-            (*lines)++;
-            *cols = 0;
+            lexer->line_num++;
+            lexer->col_num = 0;
         }
         else {
-            (*cols)++;
+            lexer->col_num++;
         }
     }
 }
@@ -78,6 +80,7 @@ int lexer_init(Lexer *lexer, const char *source) {
     lexer->line_num = 0;
     lexer->col_num = 0;
 
+    // Compile token expressions
     for (size_t i = 0; i < TOKEN_COUNT; i++) {
         regex_t expression;
         int result = regcomp(&expression, RAW_TOKEN_EXPRESSIONS[i], REG_EXTENDED);
@@ -88,22 +91,56 @@ int lexer_init(Lexer *lexer, const char *source) {
         lexer->token_expressions[i] = expression;
     }
 
+    // Compile ignored expressions
+    for (size_t i = 0; i < IGNORED_COUNT; i++) {
+        regex_t expression;
+        int result = regcomp(&expression, IGNORED_EXPRESSIONS[i], REG_EXTENDED);
+        if (result) {
+            fprintf(stderr, "Failed to parse ignored expression at index %d\n", i);
+            return 1;
+        }
+        lexer->ignored_expressions[i] = expression;
+    }
+
     return 0;
 }
 
 
-int lexer_next_helper(Token *token, Lexer *lexer) {
+int lexer_next(Token *token, Lexer *lexer) {
     if (lexer->index >= lexer->source_length) {
         return 1;
     }
+    
+    // Check for ignored expressions
+    while (1) {
+        const char *str = lexer->source + lexer->index;
+        int matched = 0;
 
-    const char *str = lexer->source + lexer->index;
+        for (size_t i = 0; i < IGNORED_COUNT; i++) {
+            regex_t *expression = &lexer->ignored_expressions[i];
+            regmatch_t match;
+            int match_result = regexec(expression, str, 1, &match, 0);
+
+            if (match_result == 0) {
+                update_lexer_pos(lexer, match.rm_eo);
+                lexer->index += match.rm_eo;
+                matched = 1;
+                break;
+            }
+        }
+
+        if (!matched) break;
+    }
+
+    const char *str = lexer->source + lexer->index;  // Skip past any ignored characters
+
+    // Try to match a token
     for (TokenKind kind = 0; kind < TOKEN_COUNT; kind++) {
         regex_t *expression = &lexer->token_expressions[kind];
         regmatch_t match;
-        int success = regexec(expression, str, 1, &match, 0);
+        int match_result = regexec(expression, str, 1, &match, 0);
         
-        if (success == 0) {
+        if (match_result == 0) {
             token->source = lexer->source;
             token->lexer_id = lexer->id;
             token->index = lexer->index;
@@ -111,36 +148,17 @@ int lexer_next_helper(Token *token, Lexer *lexer) {
             token->kind = kind;
             token->line_num = lexer->line_num;
             token->col_num = lexer->col_num;
-            
+
+            update_lexer_pos(lexer, token->length);
+
             lexer->prev_index = lexer->index;
             lexer->index += token->length;
-
-            size_t lines, cols;
-            count_lines_cols(&lines, &cols, token->source+token->index, token->length);
-
-            lexer->line_num += lines;
-            lexer->col_num += cols;
-            if (lines > 0) {
-                lexer->col_num = cols;
-            }
 
             return 0;
         }
     }
 
     return -1;  // Unrecognized token
-}
-
-
-int lexer_next(Token *token, Lexer *lexer) {
-    do {
-        int result = lexer_next_helper(token, lexer);
-        if (result) {
-            return result;
-        }
-    } while (token->kind == WHITESPACE || token->kind == COMMENT);
-
-    return 0;
 }
 
 
@@ -192,5 +210,4 @@ void print_token_error(Token token, const char *message) {
         fprintf(stderr, " ");
     }
     fprintf(stderr, "^\n%s", COL_RESET);
-
 }

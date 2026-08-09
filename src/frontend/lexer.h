@@ -4,13 +4,11 @@
 #include <regex.h>
 
 
-#define TOKEN_COUNT 17
+#define TOKEN_COUNT 15
+#define IGNORED_COUNT 2
 
 
 typedef enum {
-    WHITESPACE,
-    COMMENT,
-
     LOAD,
     DEFINE,
     INCLUDE,
@@ -48,6 +46,7 @@ typedef struct {
     size_t source_length, index, prev_index;
     size_t line_num, col_num;
     regex_t token_expressions[TOKEN_COUNT];
+    regex_t ignored_expressions[IGNORED_COUNT];
 } Lexer;
 
 

@@ -6,7 +6,9 @@
 #include "frontend/parser.h"
 #include "codegen.h"
 #include "compiler.h"
+#include "globals.h"
 
+#define PSEUDO_ARITHMETIC_REGISTER 0xe
 #define EXTRA_ARITHMETIC_REGISTER 0x20
 #define FIRST_FRAME_FLAG_ADDRESS 0x21
 #define START_ADDRESS 0x22
@@ -47,6 +49,7 @@ CompilerContext *initialize_compiler() {
     ctx->load_statements = (DynamicArray) {0};
     map_create(&ctx->locals, 16);
     map_create(&ctx->proc_params, 16);
+    map_create(&ctx->kept_names, 16);
 
     ctx->procedures = (DynamicArray) {0};
     ctx->program_nodes = (DynamicArray) {0};
@@ -55,6 +58,8 @@ CompilerContext *initialize_compiler() {
     ctx->tick_proc_exists = 0;
 
     ctx->current_lexer_id = 1;
+    
+    set_default_constants(&ctx->constants);
 
     return ctx;
 }
@@ -103,7 +108,12 @@ int record_constant(CompilerContext *ctx, CtxConstDefinition *const_def) {
 
 
 int record_load(CompilerContext *ctx, CtxLoadStatement *load_statment) {
-    return 0;
+    char *var_name = get_token_string(load_statment->name);
+
+    map_add(&ctx->kept_names, var_name, NULL);
+    free(var_name);
+
+    return da_append(&ctx->load_statements, load_statment);
 }
 
 
@@ -243,7 +253,6 @@ int record_locals(CompilerContext *ctx, Map *proc_locals, const char *proc_name,
 
         VarData *var_data = get_var_data(ctx, var);
         map_add(proc_locals, var_name, var_data);
-        ctx->current_address += var_data->size;
 
         if (proc_name != NULL) {
             // Add parameter to global namespace
@@ -253,7 +262,27 @@ int record_locals(CompilerContext *ctx, Map *proc_locals, const char *proc_name,
             map_add(&ctx->globals, param_global_name, var_data_copy);
         }
 
+        ctx->current_address += var_data->size;
+
         free(var_name);
+    }
+
+    return 0;
+}
+
+
+int record_locals_from_statement_list(CompilerContext *ctx, Map *proc_locals, const CtxStatementList *statement_list) {
+    size_t statement_count = statement_list->statement_count;
+    for (size_t j = 0; j < statement_count; j++) {
+            CtxStatement *statement = statement_list->statements[j];
+        if (statement->kind == LOCAL_DECLARATION) {
+            CtxDeclarationList *local_decl_list = statement->statement.local_declaration->decl_list;
+            if (record_locals(ctx, proc_locals, NULL, local_decl_list)) return 1;
+        }
+        else if (statement->kind == LOOP_BLOCK) {
+            CtxLoopBlock *loop_block = statement->statement.loop_block;
+            if (record_locals_from_statement_list(ctx, proc_locals, loop_block->statement_list)) return 1;
+        }
     }
 
     return 0;
@@ -282,14 +311,7 @@ int memory_pass(CompilerContext *ctx) {
         }
         
         // Record other locals
-        size_t statement_count = procedure->block->statement_list->statement_count;
-        for (size_t j = 0; j < statement_count; j++) {
-            CtxStatement *statement = procedure->block->statement_list->statements[j];
-            if (statement->kind == LOCAL_DECLARATION) {
-                CtxDeclarationList *local_decl_list = statement->statement.local_declaration->decl_list;
-                record_locals(ctx, proc_locals, NULL, local_decl_list);
-            }
-        }
+        record_locals_from_statement_list(ctx, proc_locals, procedure->block->statement_list);
 
         free(proc_name);
     }
@@ -338,24 +360,30 @@ int emit_instruction_arg(const CodegenContext *ctx, CtxInstruction *instruction,
         emit_token_value(gen, arg);
     }
     else {  // Name
-        void* value = NULL;
-        int32_t value_int = 0;
-        if (map_get(&value, &ctx->ctx->constants, arg_value_str) == 0) {
-            value_int = (int32_t) (long) value;
-        }
-        else if (map_get(&value, &ctx->ctx->globals, arg_value_str) == 0) {
-            value_int = ((VarData*) value)->address;
-        }
-        else if (map_get(&value, ctx->proc_locals, arg_value_str) == 0) {
-            value_int = ((VarData*) value)->address;
+        if (map_get(NULL, &ctx->ctx->kept_names, arg_value_str) == 0) {
+            // Is a kept name
+            emit(gen, "%s", arg_value_str);
         }
         else {
-            print_token_error(arg, "Unrecognized name");
-            free(arg_value_str);
-            return 1;
+            void* value = NULL;
+            int32_t value_int = 0;
+            if (map_get(&value, &ctx->ctx->constants, arg_value_str) == 0) {
+                value_int = (int32_t) (long) value;
+            }
+            else if (map_get(&value, &ctx->ctx->globals, arg_value_str) == 0) {
+                value_int = ((VarData*) value)->address;
+            }
+            else if (map_get(&value, ctx->proc_locals, arg_value_str) == 0) {
+                value_int = ((VarData*) value)->address;
+            }
+            else {
+                print_token_error(arg, "Unrecognized name");
+                free(arg_value_str);
+                return 1;
+            }
+    
+            emit(gen, "%#x", value_int);
         }
-
-        emit(gen, "%#x", value_int);
     }
 
     free(arg_value_str);
@@ -390,9 +418,7 @@ int emit_instruction(const CodegenContext *ctx, CtxInstruction *instruction) {
         emit_token_value(gen, instruction->args[0]);
     }
     else if (strcmp(ins_name, "brkeq") == 0) {
-        if (ctx->break_label == NULL) {
-            break_error = 1;
-        }
+        if (ctx->break_label == NULL) break_error = 1;
         else {
             emit(gen, "cmp %#x ", EXTRA_ARITHMETIC_REGISTER);
             if (emit_instruction_args(ctx, instruction)) arg_error = 1;
@@ -402,12 +428,36 @@ int emit_instruction(const CodegenContext *ctx, CtxInstruction *instruction) {
         }
     }
     else if (strcmp(ins_name, "brkne") == 0) {
-        if (ctx->break_label == NULL) {
-            break_error = 1;
-        }
+        if (ctx->break_label == NULL) break_error = 1;
         else {
             emit(gen, "jnea %s ", ctx->break_label);
             if (emit_instruction_args(ctx, instruction)) arg_error = 1;
+        }
+    }
+    else if (strcmp(ins_name, "brkge") == 0) {
+        if (ctx->break_label == NULL) break_error = 1;
+        else {
+            emit(gen, "cmp %#x ", EXTRA_ARITHMETIC_REGISTER);
+            if (emit_instruction_args(ctx, instruction)) arg_error = 1;
+            emit(gen, "\n");
+            emit_indent(gen);
+            emit(gen, "jnea %s %#x 1", ctx->break_label, EXTRA_ARITHMETIC_REGISTER);
+        }
+    }
+    else if (strcmp(ins_name, "brkle") == 0) {
+        if (ctx->break_label == NULL) break_error = 1;
+        else {
+            emit(gen, "cmp %#x ", EXTRA_ARITHMETIC_REGISTER);
+            if (emit_instruction_args(ctx, instruction)) arg_error = 1;
+            emit(gen, "\n");
+            emit_indent(gen);
+            emit(gen, "jnea %s %#x 2", ctx->break_label, EXTRA_ARITHMETIC_REGISTER);
+        }
+    }
+    else if (strcmp(ins_name, "brk") == 0) {
+        if (ctx->break_label == NULL) break_error = 1;
+        else {
+            emit(gen, "ja %s", ctx->break_label);
         }
     }
     else {  // All other instructions
@@ -555,7 +605,7 @@ int codegen_pass(CompilerContext *ctx, const char *outfile) {
     emit_load_statements(ctx, &gen);
 
     // Emit start/tick callers
-    emit(&gen, "jnea %#x 1\nja tick\n", FIRST_FRAME_FLAG_ADDRESS);
+    emit(&gen, "jnea start %#x 1\nja tick\n", FIRST_FRAME_FLAG_ADDRESS);
     
     // Emit procedures
     for (size_t i = 0; i < ctx->procedures.length; i++) {
@@ -615,6 +665,9 @@ int cleanup_compiler(CompilerContext *ctx) {
 
     // Free param addresses
     map_free_all_with(ctx->proc_params, da_free);
+
+    // Free kept names
+    map_free(&ctx->kept_names);
 
     da_free(&ctx->procedures);
     da_free(&ctx->program_nodes);
