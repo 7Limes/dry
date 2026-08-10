@@ -1,5 +1,7 @@
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <linux/limits.h>
 #include "util/map.h"
 #include "util/da.h"
 #include "util/util.h"
@@ -55,6 +57,8 @@ CompilerContext *initialize_compiler() {
 
     ctx->procedures = (DynamicArray) {0};
     ctx->program_nodes = (DynamicArray) {0};
+
+    map_create(&ctx->included_files, 16);
 
     ctx->start_proc_exists = 0;
     ctx->tick_proc_exists = 0;
@@ -186,16 +190,26 @@ int record_global(CompilerContext *ctx, CtxDeclaration *global_decl) {
 int handle_include(CompilerContext *ctx, CtxIncludeStatement *include_statement) {
     char *file_path_unstripped = get_token_string(include_statement->file_path);
     char file_path[128];
-
+    char file_abspath[PATH_MAX+1];
+    
+    // Remove quotations
     size_t path_length = strlen(file_path_unstripped)-2;
     strncpy(file_path, file_path_unstripped+1, MIN(path_length, 127));
     file_path[path_length] = '\0';
     free(file_path_unstripped);
-
+    
     if (!file_exists(file_path)) {
         print_token_error(include_statement->file_path, "File not found");
         return 1;
     }
+
+    // Check if file has already been included
+    realpath(file_path, file_abspath);
+    if (map_get(NULL, &ctx->included_files, file_abspath) == 0) {
+        return 0;
+    }
+
+    map_add(&ctx->included_files, file_abspath, NULL);  // Mark as included
 
     char *program_string;
     read_file_bytes((uint8_t**) &program_string, NULL, file_path);
@@ -747,4 +761,5 @@ int cleanup_compiler(CompilerContext *ctx) {
 
     da_free(&ctx->procedures);
     da_free(&ctx->program_nodes);
+    map_free(&ctx->included_files);
 }

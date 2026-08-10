@@ -19,6 +19,8 @@ typedef struct {
     DynamicArray procedures;     // DynamicArray[CtxProcedure*]
     DynamicArray program_nodes;  // DynamicArray[CtxProgram*]
 
+    Map included_files;  // DynamicArray[str, NULL]
+
     int start_proc_exists, tick_proc_exists;
     size_t current_lexer_id;
 
