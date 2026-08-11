@@ -16,8 +16,9 @@ typedef struct {
     Map proc_params;  // Map[str, DynamicArray[size_t]]    Maps proc names -> list of its parameter addresses
     Map kept_names;   // Map[str, NULL]                    A set of names that will not be replaced with int values 
 
-    DynamicArray procedures;     // DynamicArray[CtxProcedure*]
-    DynamicArray program_nodes;  // DynamicArray[CtxProgram*]
+    DynamicArray procedures;       // DynamicArray[CtxProcedure*]
+    DynamicArray program_nodes;    // DynamicArray[CtxProgram*]
+    DynamicArray program_strings;  // DynamicArray[char*]    Program strings that need to be freed after compilation
 
     Map included_files;  // DynamicArray[str, NULL]
 

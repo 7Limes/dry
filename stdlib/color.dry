@@ -1,0 +1,10 @@
+hexcolor(c) {
+    $ (r, g, b, divisor)
+
+    ldi divisor 256
+    mod b c divisor
+    div c c divisor
+    mod g c divisor
+    div r c divisor
+    col r g b
+}

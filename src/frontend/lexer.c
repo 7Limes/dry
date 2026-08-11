@@ -71,6 +71,29 @@ void print_nth_line(FILE *stream, const char *source, size_t line) {
 }
 
 
+void print_token(Token token) {
+    char token_value[128];
+    strncpy(token_value, token.source+token.index, token.length);
+    token_value[token.length] = '\0';
+
+    printf("Token(kind: %s, value: \"%s\", pos: (%d, %d))\n", TOKEN_KINDS[token.kind], token_value, token.line_num, token.col_num);
+}
+
+
+void print_token_error(Token token, const char *message) {
+    fprintf(stderr, "%sERROR: %s\n", COL_ERROR, message);
+    fprintf(stderr, "%d | ", token.line_num+1);
+    print_nth_line(stderr, token.source, token.line_num);
+    fprintf(stderr, "\n");
+
+    for (size_t i = 1; i <= token.col_num+4; i++) {
+        fprintf(stderr, " ");
+    }
+    fprintf(stderr, "^\n%s", COL_RESET);
+}
+
+
+
 int lexer_init(Lexer *lexer, const char *source) {
     lexer->source = source;
     lexer->id = 0;
@@ -107,7 +130,7 @@ int lexer_init(Lexer *lexer, const char *source) {
 
 
 int lexer_next(Token *token, Lexer *lexer) {
-    if (lexer->index >= lexer->source_length) {
+    if (lexer_is_done(lexer)) {
         return 1;
     }
     
@@ -130,6 +153,10 @@ int lexer_next(Token *token, Lexer *lexer) {
         }
 
         if (!matched) break;
+    }
+
+    if (lexer_is_done(lexer)) {
+        return 1;
     }
 
     const char *str = lexer->source + lexer->index;  // Skip past any ignored characters
@@ -168,8 +195,10 @@ int lexer_prev(Lexer *lexer) {
 
 
 Token lexer_peek(Lexer *lexer) {
-    Token token;
-    lexer_next(&token, lexer);
+    Token token = {0};
+    if (lexer_next(&token, lexer)) {
+        return token;
+    }
     lexer_prev(lexer);
     return token;
 }
@@ -188,26 +217,4 @@ char* get_token_string(Token token) {
     result[token.length] = '\0';
 
     return result;
-}
-
-
-void print_token(Token token) {
-    char token_value[128];
-    strncpy(token_value, token.source+token.index, token.length);
-    token_value[token.length] = '\0';
-
-    printf("Token(kind: %s, value: \"%s\", pos: (%d, %d))\n", TOKEN_KINDS[token.kind], token_value, token.line_num, token.col_num);
-}
-
-
-void print_token_error(Token token, const char *message) {
-    fprintf(stderr, "%sERROR: %s\n", COL_ERROR, message);
-    fprintf(stderr, "%d | ", token.line_num+1);
-    print_nth_line(stderr, token.source, token.line_num);
-    fprintf(stderr, "\n");
-
-    for (size_t i = 1; i <= token.col_num+4; i++) {
-        fprintf(stderr, " ");
-    }
-    fprintf(stderr, "^\n%s", COL_RESET);
 }

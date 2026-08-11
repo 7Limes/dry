@@ -9,6 +9,7 @@
 typedef struct {
     Lexer *lex;
     int error;
+    DynamicArray trace;
 } ParserContext;
 
 
@@ -17,58 +18,121 @@ CtxStatement* parse_statement(ParserContext *ctx);
 void free_statement(CtxStatement *statement);
 
 
+void trace_push(ParserContext *ctx, const char *s) {
+    da_append(&ctx->trace, (void*) s);
+}
+
+void trace_pop(ParserContext *ctx) {
+    da_pop(&ctx->trace, NULL);
+}
+
+void print_trace(const ParserContext *ctx) {
+    printf("Parser Trace:\n");
+    for (size_t i = 0; i < ctx->trace.length; i++) {
+        for (size_t j = 0; j < i; j++) {
+            printf(" ");
+        }
+        printf("%ld. %s\n", i, ctx->trace.data[i]);
+    }
+}
+
+
+void print_lexer_end_error() {
+    fprintf(stderr, "%sERROR: Reached end of token stream%s\n", COL_ERROR, COL_RESET);
+}
+
+
 int next_token_safe(Token *token, ParserContext *ctx, TokenKind expected_kind) {
-    lexer_next(token, ctx->lex);
+    if (lexer_next(token, ctx->lex)) {
+        print_lexer_end_error();
+        print_trace(ctx);
+        ctx->error = 1;
+        return 1;
+    }
     return token->kind != expected_kind;
 }
 
 
-int next_token(Token *token, ParserContext *ctx, TokenKind expected_kind) {
-    lexer_next(token, ctx->lex);
+int next_token_helper(Token *token, ParserContext *ctx, TokenKind expected_kind, int error_on_eof) {
+    if (lexer_next(token, ctx->lex)) {
+        if (error_on_eof) {
+            print_lexer_end_error();
+            print_trace(ctx);
+            ctx->error = 1;
+        }
+        return 1;
+    }
 
     if (token->kind != expected_kind) {
         char err_buf[128];
         snprintf(err_buf, 127, "Expected token of type %s but got %s", TOKEN_KINDS[expected_kind], TOKEN_KINDS[token->kind]);
         print_token_error(*token, err_buf);
+        print_trace(ctx);
         ctx->error = 1;
-        return 1;
+        return 2;
     }
 
     return 0;
 }
 
+
+int next_token(Token *token, ParserContext *ctx, TokenKind expected_kind) {
+    next_token_helper(token, ctx, expected_kind, 1);
+}
+
+int next_token_eof_ok(Token *token, ParserContext *ctx, TokenKind expected_kind) {
+    next_token_helper(token, ctx, expected_kind, 0);
+}
+
 int next_token2(Token *token, ParserContext *ctx, TokenKind expected1, TokenKind expected2) {
-    lexer_next(token, ctx->lex);
+    if (lexer_next(token, ctx->lex)) {
+        print_lexer_end_error();
+        ctx->error = 1;
+        return 1;
+    }
 
     if (token->kind != expected1 && token->kind != expected2) {
         char err_buf[128];
         snprintf(err_buf, 127, "Expected token of type %s or %s but got %s", TOKEN_KINDS[expected1], TOKEN_KINDS[expected2], TOKEN_KINDS[token->kind]);
         print_token_error(*token, err_buf);
         ctx->error = 1;
-        return 1;
+        return 2;
     }
 
     return 0;
 }
 
+int peek_next_token(Token *token, ParserContext *ctx) {
+    if (lexer_next(token, ctx->lex)) {
+        print_lexer_end_error();
+        print_trace(ctx);
+        ctx->error = 1;
+        return 1;
+    }
+
+    lexer_prev(ctx->lex);
+    return 0;
+}
+
 
 CtxVarDeclaration* parse_var_declaration(ParserContext *ctx) {
+    trace_push(ctx, "var_declaration");
+
     Token name;
-    if (next_token(&name, ctx, NAME)) return NULL;
+    if (next_token(&name, ctx, NAME)) {trace_pop(ctx); return NULL;}
 
     int is_sized = 0;
     Token size = {0};
 
     Token peek_token;
-    lexer_next(&peek_token, ctx->lex);
+    if (peek_next_token(&peek_token, ctx)) {trace_pop(ctx); return NULL;}
+
     if (peek_token.kind == LBRACKET) {
+        next_token_safe(&peek_token, ctx, LBRACKET);
         Token rbracket;
-        if (next_token2(&size, ctx, INT, NAME)) return NULL;
-        if (next_token(&rbracket, ctx, RBRACKET)) return NULL;
+        if (next_token2(&size, ctx, INT, NAME)) {trace_pop(ctx); return NULL;}
+        if (next_token(&rbracket, ctx, RBRACKET)) {trace_pop(ctx); return NULL;}
         is_sized = 1;
-    }
-    else {
-        lexer_prev(ctx->lex);
     }
 
     CtxVarDeclaration *var_decl = malloc(sizeof(CtxVarDeclaration));
@@ -76,18 +140,23 @@ CtxVarDeclaration* parse_var_declaration(ParserContext *ctx) {
     var_decl->name = name;
     var_decl->size = size;
 
+    trace_pop(ctx);
+
     return var_decl;
 }
 
 
 CtxDeclarationList* parse_declaration_list(ParserContext *ctx, int required) {
+    trace_push(ctx, "declaration_list");
+
     Token lparen;
     if (required) {
-        if (next_token(&lparen, ctx, LPAREN)) return NULL;
+        if (next_token(&lparen, ctx, LPAREN)) {trace_pop(ctx); return NULL;}
     }
     else {
         if (next_token_safe(&lparen, ctx, LPAREN)) {
             lexer_prev(ctx->lex);
+            trace_pop(ctx);
             return NULL;
         };
     }
@@ -98,17 +167,21 @@ CtxDeclarationList* parse_declaration_list(ParserContext *ctx, int required) {
         CtxVarDeclaration *var_decl = parse_var_declaration(ctx);
         if (ctx->error) {
             da_free_all(&vars);
+            trace_pop(ctx);
             return NULL;
         }
 
         da_append(&vars, var_decl);
 
         Token peek_token;
-        lexer_next(&peek_token, ctx->lex);
+        if (peek_next_token(&peek_token, ctx)) {trace_pop(ctx); return NULL;}
+
         if (peek_token.kind == COMMA) {
+            next_token_safe(&peek_token, ctx, COMMA);
             continue;
         }
         else if (peek_token.kind == RPAREN) {
+            next_token_safe(&peek_token, ctx, RPAREN);
             break;
         }
         
@@ -116,12 +189,15 @@ CtxDeclarationList* parse_declaration_list(ParserContext *ctx, int required) {
         da_free_all(&vars);
         print_token_error(lparen, "Expected comma or right parenthesis");
         ctx->error = 1;
+        trace_pop(ctx);
         return NULL;
     }
 
     CtxDeclarationList *decl_list = malloc(sizeof(CtxDeclarationList));
     decl_list->var_count = vars.length;
     decl_list->vars = (CtxVarDeclaration**) vars.data;
+
+    trace_pop(ctx);
 
     return decl_list;
 }
@@ -133,6 +209,8 @@ void free_declaration_list(CtxDeclarationList *decl_list) {
 
 
 CtxStatementList* parse_statement_list(ParserContext *ctx, TokenKind closing_token) {
+    trace_push(ctx, "statement_list");
+
     DynamicArray statements = {0};
 
     while (1) {
@@ -145,6 +223,7 @@ CtxStatementList* parse_statement_list(ParserContext *ctx, TokenKind closing_tok
         CtxStatement *statement = parse_statement(ctx);
         if (ctx->error) {
             da_free_all_with(statements, free_statement);
+            trace_pop(ctx);
             return NULL;
         }
 
@@ -153,7 +232,11 @@ CtxStatementList* parse_statement_list(ParserContext *ctx, TokenKind closing_tok
 
     CtxStatementList *list = malloc(sizeof(CtxStatementList));
     list->statement_count = statements.length;
-    list->statements = (CtxStatement**) statements.data;    
+    list->statements = (CtxStatement**) statements.data;
+
+    trace_pop(ctx);
+
+    return list;
 }
 
 
@@ -167,9 +250,12 @@ void free_statement_list(CtxStatementList *list) {
 
 
 CtxInstruction* parse_instruction(ParserContext *ctx) {
+    trace_push(ctx, "instruction");
+
     Token name;
     if (next_token_safe(&name, ctx, NAME)) {
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     }
 
@@ -182,6 +268,7 @@ CtxInstruction* parse_instruction(ParserContext *ctx) {
         snprintf(err_buf, 127, "Unrecognized instruction \"%s\"", instruction_name);
         print_token_error(name, err_buf);
         free(instruction_name);
+        trace_pop(ctx);
         return NULL;
     }
 
@@ -191,14 +278,18 @@ CtxInstruction* parse_instruction(ParserContext *ctx) {
 
     for (size_t i = 0; i < arg_count; i++) {
         Token arg;
-        if (next_token2(&arg, ctx, INT, NAME)) return NULL;
+        if (next_token2(&arg, ctx, INT, NAME)) {trace_pop(ctx); return NULL;}
         args[i] = arg;
     }
+
+    trace_pop(ctx);
 
     CtxInstruction *instruction = malloc(sizeof(CtxInstruction));
     instruction->name = name;
     instruction->arg_count = arg_count;
     instruction->args = args;
+
+    return instruction;
 }
 
 
@@ -209,17 +300,22 @@ void free_instruction(CtxInstruction *instruction) {
 
 
 CtxDeclaration* parse_declaration(ParserContext *ctx) {
+    trace_push(ctx, "declaration");
+
     Token dollar;
     if (next_token_safe(&dollar, ctx, DOLLAR_SIGN)) {
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     } 
 
     CtxDeclarationList *decl_list = parse_declaration_list(ctx, 1);
-    if (ctx->error) return NULL;
+    if (ctx->error) {trace_pop(ctx); return NULL;}
 
     CtxDeclaration *local_declaration = malloc(sizeof(CtxDeclaration));
     local_declaration->decl_list = decl_list;
+
+    trace_pop(ctx);
 
     return local_declaration;
 }
@@ -232,18 +328,23 @@ void free_declaration(CtxDeclaration *decl) {
 
 
 CtxLoopBlock* parse_loop_block(ParserContext *ctx) {
+    trace_push(ctx, "loop_block");
+
     Token lbracket;
     if (next_token_safe(&lbracket, ctx, LBRACKET)) {
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     }
 
     CtxStatementList *statement_list = parse_statement_list(ctx, RBRACKET);
-    if (ctx->error) return NULL;
+    if (ctx->error) {trace_pop(ctx); return NULL;}
 
     CtxLoopBlock *block = malloc(sizeof(CtxLoopBlock));
     block->lbracket = lbracket;
     block->statement_list = statement_list;
+
+    trace_pop(ctx);
 
     return block;
 }
@@ -256,39 +357,50 @@ void free_loop_block(CtxLoopBlock *block) {
 
 
 CtxStatement* parse_statement(ParserContext *ctx) {
+    trace_push(ctx, "statement");
+
+    CtxStatement *statement = NULL;
+
     CtxInstruction *instruction = parse_instruction(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (instruction) {
-        CtxStatement *statement = malloc(sizeof(CtxStatement));
+        statement = malloc(sizeof(CtxStatement));
         statement->kind = INSTRUCTION;
         statement->statement.instruction = instruction;
-        return statement;
+        goto done;
     }
 
     CtxDeclaration *local_declaration = parse_declaration(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (local_declaration) {
-        CtxStatement *statement = malloc(sizeof(CtxStatement));
+        statement = malloc(sizeof(CtxStatement));
         statement->kind = LOCAL_DECLARATION;
         statement->statement.local_declaration = local_declaration;
-        return statement;
+        goto done;
     }
 
     CtxLoopBlock *loop_block = parse_loop_block(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (loop_block) {
-        CtxStatement *statement = malloc(sizeof(CtxStatement));
+        statement = malloc(sizeof(CtxStatement));
         statement->kind = LOOP_BLOCK;
         statement->statement.loop_block = loop_block;
-        return statement;
+        goto done;
     }
 
-    Token err_token;
-    lexer_next(&err_token, ctx->lex);
-    print_token_error(err_token, "Expected instruction, local declaration, or loop block");
-    ctx->error = 1;
+    if (statement == NULL) {
+        Token err_token;
+        if (peek_next_token(&err_token, ctx) == 0) {
+            print_token_error(err_token, "Expected instruction, local declaration, or loop block");
+            ctx->error = 1;
+        }
+    }
 
-    return NULL;
+    done:
+
+    trace_pop(ctx);
+
+    return statement;
 }
 
 
@@ -310,14 +422,18 @@ void free_statement(CtxStatement *statement) {
 
 
 CtxBlock* parse_block(ParserContext *ctx) {
+    trace_push(ctx, "block");
+
     Token lbrace;
-    if (next_token(&lbrace, ctx, LBRACE)) return NULL;
+    if (next_token(&lbrace, ctx, LBRACE)) {trace_pop(ctx); return NULL;}
 
     CtxStatementList *statement_list = parse_statement_list(ctx, RBRACE);
-    if (ctx->error) return NULL;
+    if (ctx->error) {trace_pop(ctx); return NULL;}
 
     CtxBlock *block = malloc(sizeof(CtxBlock));
     block->statement_list = statement_list;
+
+    trace_pop(ctx);
 
     return block;
 }
@@ -330,19 +446,25 @@ void free_block(CtxBlock *block) {
 
 
 CtxProcedure* parse_procedure(ParserContext *ctx) {
+    trace_push(ctx, "procedure");
+
     Token proc_name;
-    if (next_token(&proc_name, ctx, NAME)) return NULL;
+    int next_result = next_token_eof_ok(&proc_name, ctx, NAME);
+    if (next_result == 1) {trace_pop(ctx); return NULL;}  // End of file
+    else if (next_result == 2) {trace_pop(ctx); return NULL;}
 
     CtxDeclarationList *decl_list = parse_declaration_list(ctx, 0);
-    if (ctx->error) return NULL;
+    if (ctx->error) {trace_pop(ctx); return NULL;}
 
     CtxBlock *block = parse_block(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) {trace_pop(ctx); return NULL;}
 
     CtxProcedure *proc = malloc(sizeof(CtxProcedure));
     proc->name = proc_name;
     proc->parameter_list = decl_list;
     proc->block = block;
+
+    trace_pop(ctx);
 
     return proc;
 }
@@ -358,55 +480,68 @@ void free_procedure(CtxProcedure *proc) {
 
 
 CtxMetaVarStatement* parse_meta_var_statement(ParserContext *ctx) {
+    trace_push(ctx, "meta_var_statement");
+
     Token hashtag;
     if (next_token_safe(&hashtag, ctx, HASHTAG)) {
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     }
     
     Token name, value;
-    if (next_token(&name, ctx, NAME)) return NULL;
-    if (next_token(&value, ctx, INT)) return NULL;
+    if (next_token(&name, ctx, NAME)) {trace_pop(ctx); return NULL;}
+    if (next_token(&value, ctx, INT)) {trace_pop(ctx); return NULL;}
     
     CtxMetaVarStatement *meta_var = malloc(sizeof(CtxMetaVarStatement));
     meta_var->name = name;
     meta_var->value = value;
+
+    trace_pop(ctx);
 
     return meta_var;
 }
 
 
 CtxConstDefinition* parse_const_definition(ParserContext *ctx) {
+    trace_push(ctx, "const_definition");
+
     Token define;
     if (next_token_safe(&define, ctx, DEFINE)) {
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     }
 
     Token name, value;
-    if (next_token(&name, ctx, NAME)) return NULL;
-    if (next_token(&value, ctx, INT)) return NULL;
+    if (next_token(&name, ctx, NAME)) {trace_pop(ctx); return NULL;}
+    if (next_token(&value, ctx, INT)) {trace_pop(ctx); return NULL;}
     
     CtxConstDefinition *const_def = malloc(sizeof(CtxConstDefinition));
     const_def->name = name;
     const_def->value = value;
+
+    trace_pop(ctx);
 
     return const_def;
 }
 
 
 CtxLoadStatement* parse_load_statement(ParserContext *ctx) {
+    trace_push(ctx, "load_statement");
+
     Token load;
     if (next_token_safe(&load, ctx, LOAD)) {
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     }
 
     Token name, data_op, data_type, data_string;
-    if (next_token(&name, ctx, NAME)) return NULL;
-    if (next_token(&data_op, ctx, NAME)) return NULL;
-    if (next_token(&data_type, ctx, NAME)) return NULL;
-    if (next_token(&data_string, ctx, STRING)) return NULL;
+    if (next_token(&name, ctx, NAME)) {trace_pop(ctx); return NULL;}
+    if (next_token(&data_op, ctx, NAME)) {trace_pop(ctx); return NULL;}
+    if (next_token(&data_type, ctx, NAME)) {trace_pop(ctx); return NULL;}
+    if (next_token(&data_string, ctx, STRING)) {trace_pop(ctx); return NULL;}
 
     CtxLoadStatement *load_statement = malloc(sizeof(CtxLoadStatement));
 
@@ -414,73 +549,90 @@ CtxLoadStatement* parse_load_statement(ParserContext *ctx) {
     load_statement->data_op = data_op;
     load_statement->data_type = data_type;
     load_statement->data_string = data_string;
+
+    trace_pop(ctx);
+
+    return load_statement;
 }
 
 
 CtxIncludeStatement* parse_include_statement(ParserContext *ctx) {
+    trace_push(ctx, "include_statement");
+
     Token include;
     if (next_token_safe(&include, ctx, INCLUDE)) {{
         lexer_prev(ctx->lex);
+        trace_pop(ctx);
         return NULL;
     }}
 
     Token file_path;
-    if (next_token(&file_path, ctx, STRING)) return NULL;
+    if (next_token(&file_path, ctx, STRING)) {trace_pop(ctx); return NULL;}
 
     CtxIncludeStatement *include_statement = malloc(sizeof(CtxIncludeStatement));
     include_statement->file_path = file_path;
+
+    trace_pop(ctx);
 
     return include_statement;
 }
 
 
 CtxHeaderStatement* parse_header_statement(ParserContext *ctx) {
+    trace_push(ctx, "header_statement");
+
+    CtxHeaderStatement *statement = NULL;
+
     CtxMetaVarStatement *meta_var = parse_meta_var_statement(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (meta_var) {
-        CtxHeaderStatement *statement = malloc(sizeof(CtxHeaderStatement));
+        statement = malloc(sizeof(CtxHeaderStatement));
         statement->kind = META_STATEMENT;
         statement->header_statement.meta_variable = meta_var;
-        return statement;
+        goto done;
     }
 
     CtxConstDefinition *const_def = parse_const_definition(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (const_def) {
-        CtxHeaderStatement *statement = malloc(sizeof(CtxHeaderStatement));
+        statement = malloc(sizeof(CtxHeaderStatement));
         statement->kind = CONST_DEF;
         statement->header_statement.const_definition = const_def;
-        return statement;
+        goto done;
     }
 
     CtxLoadStatement *load_statement = parse_load_statement(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (load_statement) {
-        CtxHeaderStatement *statement = malloc(sizeof(CtxHeaderStatement));
+        statement = malloc(sizeof(CtxHeaderStatement));
         statement->kind = LOAD_STATEMENT;
         statement->header_statement.load_statement = load_statement;
-        return statement;
+        goto done;
     }
 
     CtxDeclaration *global_declaration = parse_declaration(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (global_declaration) {
-        CtxHeaderStatement *statement = malloc(sizeof(CtxHeaderStatement));
+        statement = malloc(sizeof(CtxHeaderStatement));
         statement->kind = GLOBAL_DECLARATION;
         statement->header_statement.global_declaration = global_declaration;
-        return statement;
+        goto done;
     }
 
     CtxIncludeStatement *include_statement = parse_include_statement(ctx);
-    if (ctx->error) return NULL;
+    if (ctx->error) goto done;
     if (include_statement) {
-        CtxHeaderStatement *statement = malloc(sizeof(CtxHeaderStatement));
+        statement = malloc(sizeof(CtxHeaderStatement));
         statement->kind = INCLUDE_STATEMENT;
         statement->header_statement.include_statement = include_statement;
-        return statement;
+        goto done;
     }
 
-    return NULL;
+    done:
+
+    trace_pop(ctx);
+
+    return statement;
 }
 
 
@@ -500,14 +652,17 @@ void free_header_statement(CtxHeaderStatement *statement) {
 CtxProgram* parse_program(Lexer *lex) {
     ParserContext ctx = {
         .lex = lex,
-        .error = 0
+        .error = 0,
+        .trace = {0}
     };
+    trace_push(&ctx, "program");
 
     DynamicArray statements = {0};
     while (1) {
         CtxHeaderStatement *statement = parse_header_statement(&ctx);
         if (ctx.error) {
             da_free(&statements);
+            trace_pop(&ctx);
             return NULL;
         }
         if (statement == NULL) {
@@ -521,10 +676,10 @@ CtxProgram* parse_program(Lexer *lex) {
         CtxProcedure *proc = parse_procedure(&ctx);
         if (ctx.error) {
             da_free(&procedures);
+            trace_pop(&ctx);
             return NULL;
         }
         if (proc == NULL) {
-            // TODO: ERROR HERE
             break;
         }
         da_append(&procedures, proc);
@@ -538,6 +693,8 @@ CtxProgram* parse_program(Lexer *lex) {
     program->header_statements = (CtxHeaderStatement**) statements.data;
     program->procedure_count = procedures.length;
     program->procedures = (CtxProcedure**) procedures.data;
+
+    trace_pop(&ctx);
 
     return program;
 }

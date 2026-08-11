@@ -4,11 +4,13 @@
 #include "globals.h"
 #include "frontend/lexer.h"
 #include "frontend/parser.h"
+#include "stdlib/stdlib.h"
 #include "compiler.h"
 
 
 int compile_program(const char *infile, const char *outfile) {
     init_instruction_lookup();
+    init_stdlib_lookup();
 
     char *program_string;
     size_t program_length;

@@ -9,6 +9,7 @@
 #include "codegen.h"
 #include "compiler.h"
 #include "globals.h"
+#include "stdlib/stdlib.h"
 
 #define PSEUDO_ARITHMETIC_REGISTER 0xe
 #define EXTRA_ARITHMETIC_REGISTER 0x20
@@ -57,6 +58,7 @@ CompilerContext *initialize_compiler() {
 
     ctx->procedures = (DynamicArray) {0};
     ctx->program_nodes = (DynamicArray) {0};
+    ctx->program_strings = (DynamicArray) {0};
 
     map_create(&ctx->included_files, 16);
 
@@ -197,22 +199,40 @@ int handle_include(CompilerContext *ctx, CtxIncludeStatement *include_statement)
     strncpy(file_path, file_path_unstripped+1, MIN(path_length, 127));
     file_path[path_length] = '\0';
     free(file_path_unstripped);
-    
-    if (!file_exists(file_path)) {
-        print_token_error(include_statement->file_path, "File not found");
-        return 1;
-    }
-
-    // Check if file has already been included
-    realpath(file_path, file_abspath);
-    if (map_get(NULL, &ctx->included_files, file_abspath) == 0) {
-        return 0;
-    }
-
-    map_add(&ctx->included_files, file_abspath, NULL);  // Mark as included
 
     char *program_string;
-    read_file_bytes((uint8_t**) &program_string, NULL, file_path);
+    if (path_length > 0 && file_path[0] == '.') {
+        // Try to include from stdlib
+        if (map_get((void**) &program_string, &STDLIB_LOOKUP, file_path)) {
+            print_token_error(include_statement->file_path, "stdlib file not found");
+            return 1;
+        }
+
+        size_t len = strlen(program_string);
+        char *heap_program_string = malloc(len+1);
+        strncpy(heap_program_string, program_string, len);
+        heap_program_string[len] = '\0';
+        program_string = heap_program_string;
+    }
+    else {
+        // Try to include file
+        if (!file_exists(file_path)) {
+            print_token_error(include_statement->file_path, "File not found");
+            return 1;
+        }
+    
+        // Check if file has already been included
+        realpath(file_path, file_abspath);
+        if (map_get(NULL, &ctx->included_files, file_abspath) == 0) {
+            return 0;
+        }
+    
+        map_add(&ctx->included_files, file_abspath, NULL);  // Mark as included
+    
+        read_file_bytes((uint8_t**) &program_string, NULL, file_path);
+    }
+
+    da_append(&ctx->program_strings, program_string);
 
     Lexer lexer = {0};
     int init_result = lexer_init(&lexer, program_string);
@@ -226,7 +246,7 @@ int handle_include(CompilerContext *ctx, CtxIncludeStatement *include_statement)
 
     CtxProgram *program = parse_program(&lexer);
     int result = initial_pass(ctx, program);
-
+    
     return result;
 }
 
@@ -761,5 +781,11 @@ int cleanup_compiler(CompilerContext *ctx) {
 
     da_free(&ctx->procedures);
     da_free(&ctx->program_nodes);
+
+    // Free program strings
+    for (size_t i = 0; i < ctx->program_strings.length; i++) {
+        free(ctx->program_strings.data[i]);
+    }
+
     map_free(&ctx->included_files);
 }

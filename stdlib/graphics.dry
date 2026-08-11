@@ -1,0 +1,14 @@
+rect(x, y, width, height) {
+    $ (px, py, px_end, py_end)
+    add px_end x width
+    add py_end y height
+    cpy py y
+    [ brkge py py_end
+        cpy px x
+        [ brkge px px_end
+            pix px py
+            inc px
+        ]
+        inc py
+    ]
+}
