@@ -12,3 +12,89 @@ rect(x, y, width, height) {
         inc py
     ]
 }
+
+line(x0, y0, x1, y1) {
+    $ (dx, dy, sx, sy, err, x, y)
+
+    sub dx x1 x0
+    abs dx dx
+
+    sub dy y1 y0
+    abs dy dy
+    mul dy dy NEG1
+
+    cpy sx NEG1
+    cpy sy NEG1
+
+    // if x0 < x1
+    [ brkge x0 x1
+        ldi sx 1
+      brk
+    ]
+
+    // if y0 < y1
+    [ brkge y0 y1
+        ldi sy 1
+      brk
+    ]
+
+    add err dx dy
+
+    cpy x x0
+    cpy y y0
+
+    $ (stop, e2)
+    ldi stop 0
+
+    // while true
+    [
+        pix x y
+
+        // if x == x1
+        [ brkne x x1
+            // if y == y1
+            [ brkne y y1
+                ldi stop 1
+              brk
+            ]
+          brk
+        ]
+        brkne stop 0
+
+        muli e2 err 2
+
+        // if e2 >= dy
+        [ brklt e2 dy
+            // if x == x1
+            [ brkne x x1
+                ldi stop 1
+              brk
+            ]
+            // else
+            [ brkeq x x1
+                add err err dy
+                add x x sx
+              brk
+            ]
+          brk
+        ]
+        brkne stop 0
+
+        // if e2 <= dx
+        [ brkgt e2 dx
+            // if y == y1
+            [ brkne y y1
+                ldi stop 1
+              brk
+            ]
+            // else
+            [ brkeq y y1
+                add err err dx
+                add y y sy
+              brk
+            ]
+          brk
+        ]
+        brkne stop 0
+    ]
+}
