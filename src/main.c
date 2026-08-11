@@ -8,6 +8,9 @@
 #include "compiler.h"
 
 
+const char *DRY_VERSION = "0.1.0";
+
+
 int compile_program(const char *infile, const char *outfile) {
     init_instruction_lookup();
     init_stdlib_lookup();
@@ -67,6 +70,11 @@ int main(int argc, char *argv[]) {
     }
 
     if (argc == 2) {
+        if (strcmp(argv[1], "--version") == 0) {
+            printf("dry compiler v%s\n", DRY_VERSION);
+            return 0;
+        }
+
         fprintf(stderr, "Expected output path");
         return 1;   
     }

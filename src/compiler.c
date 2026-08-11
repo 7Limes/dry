@@ -279,6 +279,8 @@ int initial_pass(CompilerContext *ctx, CtxProgram *program) {
     }
 
     da_append(&ctx->program_nodes, program);
+
+    return 0;
 }
 
 
@@ -497,6 +499,8 @@ int emit_instruction_arg(const CodegenContext *ctx, CtxInstruction *instruction,
     }
 
     free(arg_value_str);
+
+    return 0;
 }
 
 
@@ -534,6 +538,8 @@ int emit_instruction(const CodegenContext *ctx, CtxInstruction *instruction) {
             if (emit_instruction_args(ctx, instruction)) arg_error = 1;
             emit(gen, "\n");
             emit_indent(gen);
+            emit(gen, "abs %#x %#x\n", EXTRA_ARITHMETIC_REGISTER, EXTRA_ARITHMETIC_REGISTER);
+            emit_indent(gen);
             emit(gen, "jnea %s %#x 1", ctx->break_label, EXTRA_ARITHMETIC_REGISTER);
         }
     }
@@ -562,6 +568,30 @@ int emit_instruction(const CodegenContext *ctx, CtxInstruction *instruction) {
             emit(gen, "\n");
             emit_indent(gen);
             emit(gen, "jnea %s %#x 2", ctx->break_label, EXTRA_ARITHMETIC_REGISTER);
+        }
+    }
+    else if (strcmp(ins_name, "brkgt") == 0) {
+        if (ctx->break_label == NULL) break_error = 1;
+        else {
+            emit(gen, "cmp %#x ", EXTRA_ARITHMETIC_REGISTER);
+            if (emit_instruction_args(ctx, instruction)) arg_error = 1;
+            emit(gen, "\n");
+            emit_indent(gen);
+            emit(gen, "cmp %#x %#x 2\n", EXTRA_ARITHMETIC_REGISTER, EXTRA_ARITHMETIC_REGISTER);
+            emit_indent(gen);
+            emit(gen, "jnea %s %#x 2", ctx->break_label, EXTRA_ARITHMETIC_REGISTER);
+        }
+    }
+    else if (strcmp(ins_name, "brklt") == 0) {
+        if (ctx->break_label == NULL) break_error = 1;
+        else {
+            emit(gen, "cmp %#x ", EXTRA_ARITHMETIC_REGISTER);
+            if (emit_instruction_args(ctx, instruction)) arg_error = 1;
+            emit(gen, "\n");
+            emit_indent(gen);
+            emit(gen, "cmp %#x %#x 1\n", EXTRA_ARITHMETIC_REGISTER, EXTRA_ARITHMETIC_REGISTER);
+            emit_indent(gen);
+            emit(gen, "jnea %s %#x 1", ctx->break_label, EXTRA_ARITHMETIC_REGISTER);
         }
     }
     else if (strcmp(ins_name, "brk") == 0) {
@@ -596,11 +626,11 @@ int emit_instruction(const CodegenContext *ctx, CtxInstruction *instruction) {
 int emit_loop_block(const CodegenContext *ctx, CtxLoopBlock *loop_block) {
     CodeGenerator *gen = ctx->gen;
 
-    char label_name[64], loop_label[64], break_label[64];
+    char label_name[64], loop_label[80], break_label[80];
 
-    snprintf(label_name, 63, "%lu_%lu_%lu", loop_block->lbracket.lexer_id, loop_block->lbracket.line_num, loop_block->lbracket.col_num);
-    snprintf(loop_label, 63, "loop_%s", label_name);
-    snprintf(break_label, 63, "break_%s", label_name);
+    snprintf(label_name, sizeof(label_name), "%lu_%lu_%lu", loop_block->lbracket.lexer_id, loop_block->lbracket.line_num, loop_block->lbracket.col_num);
+    snprintf(loop_label, sizeof(loop_label), "loop_%s", label_name);
+    snprintf(break_label, sizeof(break_label), "break_%s", label_name);
 
     emit_indent(gen);
     emit(gen, "%s:\n", loop_label);
@@ -634,13 +664,15 @@ int emit_statement(const CodegenContext *ctx, CtxStatement *statement) {
             return emit_instruction(ctx, statement->statement.instruction);
         case LOOP_BLOCK:
             return emit_loop_block(ctx, statement->statement.loop_block);
+        case LOCAL_DECLARATION:
+            break;
     }
 
     return 0;
 }
 
 
-int emit_start_statements(CompilerContext *ctx, CodeGenerator *gen) {
+void emit_start_statements(CompilerContext *ctx, CodeGenerator *gen) {
     // Emit first frame flag
     emit_indent(gen);
     emit(gen, "ldi %#x 1\n", FIRST_FRAME_FLAG_ADDRESS);
@@ -747,7 +779,7 @@ int codegen_pass(CompilerContext *ctx, const char *outfile) {
 }
 
 
-int cleanup_compiler(CompilerContext *ctx) {
+void cleanup_compiler(CompilerContext *ctx) {
     // Free AST nodes
     for (size_t i = 0; i < ctx->program_nodes.length; i++) {
         CtxProgram *program = ctx->program_nodes.data[i];

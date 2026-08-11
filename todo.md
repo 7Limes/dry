@@ -4,3 +4,4 @@
 - Disallow using periods in var declarations
 - Error for duplicate procedures
 - Include source flag
+- Continue instruction

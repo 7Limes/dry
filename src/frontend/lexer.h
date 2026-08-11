@@ -57,7 +57,7 @@ int lexer_init(Lexer *lexer, const char *source);
 int lexer_next(Token *token, Lexer *lexer);
 
 // Reverts to the previous position
-int lexer_prev(Lexer *lexer);
+void lexer_prev(Lexer *lexer);
 
 // Returns the next token without advancing
 Token lexer_peek(Lexer *lexer);

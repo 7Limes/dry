@@ -76,13 +76,13 @@ void print_token(Token token) {
     strncpy(token_value, token.source+token.index, token.length);
     token_value[token.length] = '\0';
 
-    printf("Token(kind: %s, value: \"%s\", pos: (%d, %d))\n", TOKEN_KINDS[token.kind], token_value, token.line_num, token.col_num);
+    printf("Token(kind: %s, value: \"%s\", pos: (%ld, %ld))\n", TOKEN_KINDS[token.kind], token_value, token.line_num, token.col_num);
 }
 
 
 void print_token_error(Token token, const char *message) {
     fprintf(stderr, "%sERROR: %s\n", COL_ERROR, message);
-    fprintf(stderr, "%d | ", token.line_num+1);
+    fprintf(stderr, "%ld | ", token.line_num+1);
     print_nth_line(stderr, token.source, token.line_num);
     fprintf(stderr, "\n");
 
@@ -108,7 +108,7 @@ int lexer_init(Lexer *lexer, const char *source) {
         regex_t expression;
         int result = regcomp(&expression, RAW_TOKEN_EXPRESSIONS[i], REG_EXTENDED);
         if (result) {
-            fprintf(stderr, "Failed to parse token expression at index %d\n", i);
+            fprintf(stderr, "Failed to parse token expression at index %ld\n", i);
             return 1;
         }
         lexer->token_expressions[i] = expression;
@@ -119,7 +119,7 @@ int lexer_init(Lexer *lexer, const char *source) {
         regex_t expression;
         int result = regcomp(&expression, IGNORED_EXPRESSIONS[i], REG_EXTENDED);
         if (result) {
-            fprintf(stderr, "Failed to parse ignored expression at index %d\n", i);
+            fprintf(stderr, "Failed to parse ignored expression at index %ld\n", i);
             return 1;
         }
         lexer->ignored_expressions[i] = expression;
@@ -189,7 +189,7 @@ int lexer_next(Token *token, Lexer *lexer) {
 }
 
 
-int lexer_prev(Lexer *lexer) {
+void lexer_prev(Lexer *lexer) {
     lexer->index = lexer->prev_index;
 }
 

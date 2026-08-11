@@ -32,7 +32,7 @@ void print_trace(const ParserContext *ctx) {
         for (size_t j = 0; j < i; j++) {
             printf(" ");
         }
-        printf("%ld. %s\n", i, ctx->trace.data[i]);
+        printf("%ld. %s\n", i, (char*) (ctx->trace.data[i]));
     }
 }
 
@@ -77,11 +77,11 @@ int next_token_helper(Token *token, ParserContext *ctx, TokenKind expected_kind,
 
 
 int next_token(Token *token, ParserContext *ctx, TokenKind expected_kind) {
-    next_token_helper(token, ctx, expected_kind, 1);
+    return next_token_helper(token, ctx, expected_kind, 1);
 }
 
 int next_token_eof_ok(Token *token, ParserContext *ctx, TokenKind expected_kind) {
-    next_token_helper(token, ctx, expected_kind, 0);
+    return next_token_helper(token, ctx, expected_kind, 0);
 }
 
 int next_token2(Token *token, ParserContext *ctx, TokenKind expected1, TokenKind expected2) {

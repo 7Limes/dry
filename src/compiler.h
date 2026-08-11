@@ -33,7 +33,7 @@ int initial_pass(CompilerContext *ctx, CtxProgram *program);
 int filter_pass(CompilerContext *ctx);
 int memory_pass(CompilerContext *ctx);
 int codegen_pass(CompilerContext *ctx, const char *outfile);
-int cleanup_compiler(CompilerContext *ctx);
+void cleanup_compiler(CompilerContext *ctx);
 
 
 #endif

@@ -100,9 +100,9 @@ int map_add(Map *map, const char *key, void *value) {
     }
 
     size_t key_length = strlen(key);
-    char *key_copy = malloc(sizeof(char) * (key_length + 1));
+    char *key_copy = malloc(key_length + 1);
+    strncpy(key_copy, key, key_length+1);
     key_copy[key_length] = '\0';
-    strncpy(key_copy, key, key_length);
 
     node->key = key_copy;
     node->value = value;

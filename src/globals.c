@@ -27,7 +27,7 @@ Map INSTRUCTION_LOOKUP = {0};
 
 
 int map_add_int(Map *map, const char *key, size_t value) {
-    map_add(map, key, (void*) value);
+    return map_add(map, key, (void*) value);
 }
 
 
@@ -67,6 +67,8 @@ void init_instruction_lookup() {
     map_add_int(m, "brkne", 2);
     map_add_int(m, "brkge", 2);
     map_add_int(m, "brkle", 2);
+    map_add_int(m, "brkgt", 2);
+    map_add_int(m, "brklt", 2);
     map_add_int(m, "brk", 0);
 }
 
