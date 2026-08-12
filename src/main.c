@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <string.h>
-#include "util/util.h"
 #include "globals.h"
+#include "util/util.h"
 #include "frontend/lexer.h"
 #include "frontend/parser.h"
 #include "stdlib/stdlib.h"
-#include "compiler.h"
+#include "compiler/compiler.h"
 
 
 const char *DRY_VERSION = "0.1.0";

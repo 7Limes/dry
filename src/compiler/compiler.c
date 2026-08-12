@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <linux/limits.h>
-#include "util/map.h"
-#include "util/da.h"
-#include "util/util.h"
-#include "frontend/parser.h"
+#include "../globals.h"
+#include "../util/map.h"
+#include "../util/da.h"
+#include "../util/util.h"
+#include "../frontend/parser.h"
+#include "../stdlib/stdlib.h"
 #include "codegen.h"
 #include "compiler.h"
-#include "globals.h"
-#include "stdlib/stdlib.h"
 
 #define PSEUDO_ARITHMETIC_REGISTER 0xe
 #define EXTRA_ARITHMETIC_REGISTER 0x20

@@ -2,7 +2,7 @@
 #define _CODEGEN_H
 
 #include <stdio.h>
-#include "frontend/lexer.h"
+#include "../frontend/lexer.h"
 
 typedef struct {
     FILE *stream;

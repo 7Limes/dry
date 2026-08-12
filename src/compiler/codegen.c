@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
-#include "frontend/lexer.h"
+#include "../frontend/lexer.h"
 #include "codegen.h"
 
 

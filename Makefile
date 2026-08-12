@@ -8,7 +8,7 @@ SRCS := \
 	src/util/util.c src/util/da.c src/util/map.c \
 	src/frontend/lexer.c src/frontend/parser.c \
 	src/stdlib/stdlib.c \
-	src/compiler.c src/codegen.c
+	src/compiler/compiler.c src/compiler/codegen.c
 
 OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)

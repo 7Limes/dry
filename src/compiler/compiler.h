@@ -1,9 +1,9 @@
 #ifndef _COMPILER_H
 #define _COMPILER_H
 
-#include "frontend/parser.h"
-#include "util/map.h"
-#include "util/da.h"
+#include "../util/map.h"
+#include "../util/da.h"
+#include "../frontend/parser.h"
 
 
 typedef struct {
