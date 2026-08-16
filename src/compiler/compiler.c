@@ -41,6 +41,7 @@ typedef struct {
 // Forward declarations
 int initial_pass(CompilerContext *ctx, CtxProgram *program);
 int emit_statement(const CodegenContext *ctx, CtxStatement *statement);
+void get_seen_procedures(Map *seen, const DynamicArray *all_procs, const char *proc_name);
 
 
 CompilerContext *initialize_compiler() {
@@ -76,7 +77,8 @@ CompilerContext *initialize_compiler() {
 int record_meta_var(CompilerContext *ctx, CtxMetaVarStatement *meta_var) {
     char *name = get_token_string(meta_var->name);
     char *value_str = get_token_string(meta_var->value);
-    size_t value = atoi(value_str);
+    int value;
+    str_to_int(value_str, &value);
 
     int result = 0;
     if (strcmp(name, "width") == 0) {
@@ -100,7 +102,8 @@ int record_meta_var(CompilerContext *ctx, CtxMetaVarStatement *meta_var) {
 int record_constant(CompilerContext *ctx, CtxConstDefinition *const_def) {
     char *name = get_token_string(const_def->name);
     char *value_str = get_token_string(const_def->value);
-    int32_t value = atoi(value_str);
+    int32_t value = 0;
+    str_to_int(value_str, &value);
 
     if (map_get(NULL, &ctx->constants, name) == 0) {
         print_token_error(const_def->name, "Constant with this name is already defined");
@@ -113,7 +116,6 @@ int record_constant(CompilerContext *ctx, CtxConstDefinition *const_def) {
 
     return 0;
 }
-
 
 int record_load(CompilerContext *ctx, CtxLoadStatement *load_statment) {
     char *var_name = get_token_string(load_statment->name);
@@ -135,11 +137,11 @@ int get_constant(int32_t *dest, CompilerContext *ctx, const char *name) {
 
 // Returns the amount of space that should be reserved for this variable
 size_t get_var_size(CompilerContext *ctx, const CtxVarDeclaration *var) {
-    size_t var_size = 1;
+    int var_size = 1;
     if (var->is_sized) {
         char *var_size_str = get_token_string(var->size);
         if (var->size.kind == INT) {
-            var_size = atoi(var_size_str);
+            str_to_int(var_size_str, &var_size);
         }
         else {  // Constant name
             int32_t size_i32;
@@ -299,18 +301,11 @@ CtxProcedure* find_procedure(const DynamicArray *procedures, const char *proc_na
 }
 
 
-// Recursively collects a set of all procedure names which are called from the root procedure with name `proc_name`
-void get_seen_procedures(Map *seen, const DynamicArray *all_procs, const char *proc_name) {
-    CtxProcedure *proc = find_procedure(all_procs, proc_name);
-    if (proc == NULL) {
-        return;
-    }
-    map_add(seen, proc_name, NULL);
-
-    size_t statement_count = proc->block->statement_list->statement_count;
+void get_seen_procedures_helper(Map *seen, const DynamicArray *all_procs, const CtxStatementList *statement_list) {
+    size_t statement_count = statement_list->statement_count;
 
     for (size_t i = 0; i < statement_count; i++) {
-        CtxStatement *statement = proc->block->statement_list->statements[i];
+        CtxStatement *statement = statement_list->statements[i];
         if (statement->kind == INSTRUCTION) {
             CtxInstruction *ins = statement->statement.instruction;
             char *ins_name = get_token_string(ins->name);
@@ -327,11 +322,31 @@ void get_seen_procedures(Map *seen, const DynamicArray *all_procs, const char *p
             }
             free(ins_name);
         }
+        else if (statement->kind == LOOP_BLOCK) {
+            CtxLoopBlock *loop_block = statement->statement.loop_block;
+            get_seen_procedures_helper(seen, all_procs, loop_block->statement_list);
+        }
     }
 }
 
 
+// Recursively collects a set of all procedure names which are called from the root procedure with name `proc_name`
+void get_seen_procedures(Map *seen, const DynamicArray *all_procs, const char *proc_name) {
+    CtxProcedure *proc = find_procedure(all_procs, proc_name);
+    if (proc == NULL) {
+        return;
+    }
+    map_add(seen, proc_name, NULL);
+
+    get_seen_procedures_helper(seen, all_procs, proc->block->statement_list);
+}
+
+
 int filter_pass(CompilerContext *ctx) {
+    // Add width and height to constant namespace
+    map_add(&ctx->constants, "WIDTH", (void*) ctx->width);
+    map_add(&ctx->constants, "HEIGHT", (void*) ctx->height);
+
     Map seen_procs;
     map_create(&seen_procs, 16);
     get_seen_procedures(&seen_procs, &ctx->procedures, START_PROC_NAME);

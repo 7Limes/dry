@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <limits.h>
+#include <ctype.h>
 
 
 int file_exists(char* path) {
@@ -57,4 +59,71 @@ int read_file_bytes(uint8_t **output_buffer, size_t *length, const char *file_pa
     }
 
     return 0;  // Success
+}
+
+
+/*
+ * Converts a string to an int. Supports:
+ *   - Optional leading whitespace
+ *   - Optional '+' or '-' sign
+ *   - Hexadecimal (0x/0X prefix) or decimal digits
+ *
+ * Returns 1 on success, 0 on failure
+ */
+int str_to_int(const char *str, int *out) {
+    if (str == NULL || out == NULL) {
+        return 0;
+    }
+
+    const char *p = str;
+
+    // Skip leading whitespace
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+
+    // Handle sign
+    int negative = 0;
+    if (*p == '-' || *p == '+') {
+        negative = (*p == '-');
+        p++;
+    }
+
+    // Detect base: hex if prefixed with 0x/0X, otherwise decimal
+    int base = 10;
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        base = 16;
+        p += 2;
+    }
+
+    if (*p == '\0') {
+        return 0; // nothing after sign/prefix
+    }
+
+    char *endptr;
+    long value = strtol(p, &endptr, base);
+
+    if (endptr == p) {
+        return 0; // no valid digits found
+    }
+
+    // Skip trailing whitespace
+    while (isspace((unsigned char)*endptr)) {
+        endptr++;
+    }
+
+    if (*endptr != '\0') {
+        return 0; // leftover garbage characters
+    }
+
+    if (negative) {
+        value = -value;
+    }
+
+    if (value > INT_MAX || value < INT_MIN) {
+        return 0; // overflow
+    }
+
+    *out = (int)value;
+    return 1;
 }
