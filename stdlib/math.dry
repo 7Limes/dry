@@ -1,0 +1,16 @@
+define __RAND_MODULUS 2147483647
+define __RAND_MULTIPLIER 1583458089
+
+$ (__rand_value)
+
+
+seed_rand(seed) {
+    cpy __rand_value seed
+}
+
+
+next_rand(p_dest) {
+    muli __rand_value __rand_value __RAND_MULTIPLIER
+    modi __rand_value __rand_value __RAND_MODULUS
+    sti p_dest __rand_value
+}

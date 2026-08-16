@@ -1,0 +1,62 @@
+define FONT_START_CHAR 32
+
+
+draw_text(string, font, font_size_pixels, x, y) {
+    $ (p_string, p_string_end, glyph_size_i32)
+    divi glyph_size_i32 font_size_pixels 4
+
+    add p_string string 1    // Advance to first char of string
+    rdi p_string_end string  // Get string length
+    add p_string_end p_string_end p_string
+
+    [ brkge p_string p_string_end
+        $ (gx, gy)
+        sub gx font_size_pixels 1
+        ldi gy 0
+
+        $ (char, p_glyph, p_glyph_end)
+        rdi char p_string
+        subi p_glyph char FONT_START_CHAR
+        mul p_glyph p_glyph glyph_size_i32
+        add p_glyph p_glyph font
+
+        add p_glyph_end p_glyph glyph_size_i32
+        
+        [ brkge p_glyph p_glyph_end
+
+            $ (glyph_int, bit_index)
+            rdi glyph_int p_glyph
+
+            ldi bit_index 32
+
+            [ brkle bit_index 0
+                $ (bit, px, py)
+                modi bit glyph_int 2
+
+                [ brkne bit 1
+                    add px x gx
+                    add py y gy
+                    pix px py
+                  brk
+                ]
+
+                dec gx
+                [ brkge gx 0
+                    inc gy
+                  brk
+                ]
+                mod gx gx font_size_pixels
+                
+                divi glyph_int glyph_int 2
+                dec bit_index
+            ]
+
+            inc p_glyph
+        ]
+
+        add x x font_size_pixels
+        inc x
+
+        inc p_string
+    ]
+}

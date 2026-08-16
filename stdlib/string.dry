@@ -1,0 +1,54 @@
+define __HYPHEN_CHAR 45
+
+
+int_to_str(p_dest, x) {
+    $ (amount_digits, is_negative)
+    ldi amount_digits 0
+    [ brkne x 0
+        ldi amount_digits 1
+      brk
+    ]
+
+    ldi is_negative 0
+    [ brkge x 0
+        ldi is_negative 1
+      brk
+    ]
+
+    abs x x
+
+    $ (x_copy)
+    cpy x_copy x
+    [ brkle x_copy 0
+        divi x_copy x_copy 10
+        inc amount_digits
+    ]
+
+    [ brkne is_negative 1
+        $ (digits_plus_1, hyphen)
+        add digits_plus_1 amount_digits 1 
+        sti p_dest digits_plus_1  // Set string length
+        inc p_dest
+
+        ldi hyphen __HYPHEN_CHAR
+        sti p_dest hyphen  // Set hyphen for negative
+
+      brk
+    ]
+    [ brkne is_negative 0
+        sti p_dest amount_digits // Set string length
+      brk
+    ]
+
+    // Store digits in string
+    $ (p)
+    add p p_dest amount_digits
+    [ brkle p p_dest
+        $ (digit)
+        modi digit x 10
+        addi digit digit 48
+        divi x x 10
+        sti p digit
+        dec p
+    ]
+}
