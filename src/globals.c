@@ -17,6 +17,7 @@ const char *TOKEN_KINDS[] = {
     "COMMA",
     "DOLLAR_SIGN",
     "HASHTAG",
+    "CARAT",
     "NAME",
     "INT",
     "STRING"
@@ -62,7 +63,6 @@ void init_instruction_lookup() {
     map_add_int(m, "sne", 2);
     map_add_int(m, "ret", 0);
     
-    map_add_int(m, "call", 1);
     map_add_int(m, "brkeq", 2);
     map_add_int(m, "brkne", 2);
     map_add_int(m, "brkge", 2);

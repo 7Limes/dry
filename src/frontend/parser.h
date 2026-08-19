@@ -90,16 +90,34 @@ typedef struct {
 } CtxLoopBlock;
 
 
+typedef struct {
+    Token name_or_int;
+    int use_ldi;
+} CtxProcArgument;
+
+typedef struct {
+    size_t arg_count;
+    CtxProcArgument **args;
+} CtxProcArgumentList;
+
+typedef struct {
+    Token name;
+    CtxProcArgumentList *args;
+} CtxProcCall;
+
+
 typedef enum {
     LOCAL_DECLARATION,
     INSTRUCTION,
-    LOOP_BLOCK
+    LOOP_BLOCK,
+    PROC_CALL
 } StatementKind;
 
 typedef union {
     CtxInstruction *instruction;
     CtxDeclaration *local_declaration;
     CtxLoopBlock *loop_block;
+    CtxProcCall *proc_call;
 } StatementUnion;
 
 typedef struct {

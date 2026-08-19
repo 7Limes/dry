@@ -316,21 +316,13 @@ void get_seen_procedures_helper(Map *seen, const DynamicArray *all_procs, const 
 
     for (size_t i = 0; i < statement_count; i++) {
         CtxStatement *statement = statement_list->statements[i];
-        if (statement->kind == INSTRUCTION) {
-            CtxInstruction *ins = statement->statement.instruction;
-            char *ins_name = get_token_string(ins->name);
-            if (
-                strcmp(ins_name, CALL_INSTRUCTION_NAME) == 0 &&
-                ins->arg_count > 0 &&
-                ins->args[0].kind == NAME
-            ) {
-                char *called_proc_name = get_token_string(ins->args[0]);
-                if (map_get(NULL, seen, called_proc_name) != 0) {  // Proc hasn't been seen before
-                    get_seen_procedures(seen, all_procs, called_proc_name);
-                }
-                free(called_proc_name);
+        if (statement->kind == PROC_CALL) {
+            CtxProcCall *proc_call = statement->statement.proc_call;
+            char *called_proc_name = get_token_string(proc_call->name);
+            if (map_get(NULL, seen, called_proc_name) != 0) {  // Proc hasn't been seen before
+                get_seen_procedures(seen, all_procs, called_proc_name);
             }
-            free(ins_name);
+            free(called_proc_name);
         }
         else if (statement->kind == LOOP_BLOCK) {
             CtxLoopBlock *loop_block = statement->statement.loop_block;
@@ -383,24 +375,20 @@ int filter_pass(CompilerContext *ctx) {
 }
 
 
-int record_locals(CompilerContext *ctx, Map *proc_locals, const char *proc_name, const CtxDeclarationList *decl_list) {
+int record_locals(CompilerContext *ctx, Map *proc_locals, DynamicArray *proc_params, const CtxDeclarationList *decl_list) {
     for (size_t i = 0; i < decl_list->var_count; i++) {
         CtxVarDeclaration *var = decl_list->vars[i];
         char *var_name = get_token_string(var->name);
-
+        
         VarData *var_data = get_var_data(ctx, var);
         if (var_data == NULL) {
             return 1;
         }
-
+        
         map_add(proc_locals, var_name, var_data);
-
-        if (proc_name != NULL) {
-            // Add parameter to global namespace
-            VarData *var_data_copy = get_var_data(ctx, var);
-            char param_global_name[64];
-            snprintf(param_global_name, 63, "%s.%lu", proc_name, i);
-            map_add(&ctx->globals, param_global_name, var_data_copy);
+        
+        if (proc_params != NULL) {
+            da_append(proc_params, (void*) var_data->address);
         }
 
         ctx->current_address += var_data->size;
@@ -441,14 +429,18 @@ int memory_pass(CompilerContext *ctx) {
         else if (strcmp(proc_name, TICK_PROC_NAME) == 0) {
             ctx->tick_proc_exists = 1;
         }
-
+        
         Map *proc_locals = malloc(sizeof(Map));
         map_create(proc_locals, 16);
         map_add(&ctx->locals, proc_name, proc_locals);
         
+        DynamicArray *this_proc_params = malloc(sizeof(DynamicArray));
+        *this_proc_params = (DynamicArray) {0};
+        map_add(&ctx->proc_params, proc_name, this_proc_params);
+        
         // Record parameters
         if (procedure->parameter_list != NULL) {
-            record_locals(ctx, proc_locals, proc_name, procedure->parameter_list);
+            record_locals(ctx, proc_locals, this_proc_params, procedure->parameter_list);
         }
         
         // Record other locals
@@ -490,11 +482,9 @@ void emit_array_initializers(CodeGenerator *gen, const Map *var_data_map) {
     }
 }
 
-
-int emit_instruction_arg(const CodegenContext *ctx, CtxInstruction *instruction, size_t arg_index) {
+int emit_arg_token(const CodegenContext *ctx, Token arg) {
     CodeGenerator *gen = ctx->gen;
 
-    Token arg = instruction->args[arg_index];
     char *arg_value_str = get_token_string(arg);
 
     if (arg.kind == INT) {
@@ -530,6 +520,12 @@ int emit_instruction_arg(const CodegenContext *ctx, CtxInstruction *instruction,
     free(arg_value_str);
 
     return 0;
+}
+
+
+int emit_instruction_arg(const CodegenContext *ctx, CtxInstruction *instruction, size_t arg_index) {
+    Token arg = instruction->args[arg_index];
+    return emit_arg_token(ctx, arg);
 }
 
 
@@ -687,12 +683,51 @@ int emit_loop_block(const CodegenContext *ctx, CtxLoopBlock *loop_block) {
 }
 
 
+int emit_proc_call(const CodegenContext *ctx, CtxProcCall *proc_call) {
+    CodeGenerator *gen = ctx->gen;
+
+    char *proc_name = get_token_string(proc_call->name);
+
+    DynamicArray *proc_params;
+    if (map_get((void**) &proc_params, &ctx->ctx->proc_params, proc_name)) {
+        print_token_error(proc_call->name, "Tried to call unrecognized function");
+        return 1;
+    }
+
+    CtxProcArgumentList *arg_list = proc_call->args;
+    for (size_t i = 0; i < arg_list->arg_count; i++) {
+        CtxProcArgument *arg = arg_list->args[i];
+        size_t param_dest = (size_t) proc_params->data[i];
+        
+        emit_indent(gen);
+        if (arg->use_ldi) {
+            emit(gen, "ldi %#x ", param_dest);
+        }
+        else {
+            emit(gen, "cpy %#x ", param_dest);
+        }
+
+        emit_arg_token(ctx, arg->name_or_int);
+        emit(gen, "\n");
+    }
+
+    emit_indent(gen);
+    emit(gen, "call %s\n", proc_name);
+
+    free(proc_name);
+
+    return 0;
+}
+
+
 int emit_statement(const CodegenContext *ctx, CtxStatement *statement) {
     switch (statement->kind) {
         case INSTRUCTION:
             return emit_instruction(ctx, statement->statement.instruction);
         case LOOP_BLOCK:
             return emit_loop_block(ctx, statement->statement.loop_block);
+        case PROC_CALL:
+            return emit_proc_call(ctx, statement->statement.proc_call);
         case LOCAL_DECLARATION:
             break;
     }

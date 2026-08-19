@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include "parser.h"
 #include "../globals.h"
 #include "../util/da.h"
@@ -84,16 +85,40 @@ int next_token_eof_ok(Token *token, ParserContext *ctx, TokenKind expected_kind)
     return next_token_helper(token, ctx, expected_kind, 0);
 }
 
-int next_token2(Token *token, ParserContext *ctx, TokenKind expected1, TokenKind expected2) {
+int next_token_n(Token *token, ParserContext *ctx, int n_expected, ...) {
     if (lexer_next(token, ctx->lex)) {
         print_lexer_end_error();
         ctx->error = 1;
         return 1;
     }
 
-    if (token->kind != expected1 && token->kind != expected2) {
-        char err_buf[128];
-        snprintf(err_buf, 127, "Expected token of type %s or %s but got %s", TOKEN_KINDS[expected1], TOKEN_KINDS[expected2], TOKEN_KINDS[token->kind]);
+    va_list args;
+    va_start(args, n_expected);
+
+    int matched = 0;
+    for (int i = 0; i < n_expected; i++) {
+        TokenKind k = va_arg(args, TokenKind);
+        if (token->kind == k) {
+            matched = 1;
+            break;
+        }
+    }
+    va_end(args);
+
+    if (!matched) {
+        char err_buf[256];
+        int off = snprintf(err_buf, sizeof(err_buf), "Expected token of type ");
+
+        va_start(args, n_expected);
+        for (int i = 0; i < n_expected && off < (int)sizeof(err_buf); i++) {
+            TokenKind k = va_arg(args, TokenKind);
+            const char *sep = (i == 0) ? "" : (i == n_expected - 1) ? " or " : ", ";
+            off += snprintf(err_buf + off, sizeof(err_buf) - off, "%s%s", sep, TOKEN_KINDS[k]);
+        }
+        va_end(args);
+
+        snprintf(err_buf + off, sizeof(err_buf) - off, " but got %s", TOKEN_KINDS[token->kind]);
+
         print_token_error(*token, err_buf);
         ctx->error = 1;
         return 2;
@@ -130,7 +155,7 @@ CtxVarDeclaration* parse_var_declaration(ParserContext *ctx) {
     if (peek_token.kind == LBRACKET) {
         next_token_safe(&peek_token, ctx, LBRACKET);
         Token rbracket;
-        if (next_token2(&size, ctx, INT, NAME)) {trace_pop(ctx); return NULL;}
+        if (next_token_n(&size, ctx, 2, INT, NAME)) {trace_pop(ctx); return NULL;}
         if (next_token(&rbracket, ctx, RBRACKET)) {trace_pop(ctx); return NULL;}
         is_sized = 1;
     }
@@ -278,7 +303,7 @@ CtxInstruction* parse_instruction(ParserContext *ctx) {
 
     for (size_t i = 0; i < arg_count; i++) {
         Token arg;
-        if (next_token2(&arg, ctx, INT, NAME)) {trace_pop(ctx); return NULL;}
+        if (next_token_n(&arg, ctx, 2, INT, NAME)) {trace_pop(ctx); return NULL;}
         args[i] = arg;
     }
 
@@ -355,11 +380,148 @@ void free_loop_block(CtxLoopBlock *block) {
     free(block);
 }
 
+CtxProcArgument* parse_proc_argument(ParserContext *ctx) {
+    trace_push(ctx, "proc_argument");
+
+    Token name_or_int;
+    int use_ldi = 0;
+
+    Token first_token;
+    if (next_token_n(&first_token, ctx, 3, NAME, INT, CARAT)) {
+        lexer_prev(ctx->lex);
+        trace_pop(ctx);
+        return NULL;
+    };
+
+    if (first_token.kind == CARAT) {
+        use_ldi = 1;
+        if (next_token_n(&name_or_int, ctx, 2, NAME, INT)) {
+            lexer_prev(ctx->lex);
+            trace_pop(ctx);
+            return NULL;
+        };
+    }
+    else {
+        name_or_int = first_token;
+    }
+
+    CtxProcArgument *arg = malloc(sizeof(CtxProcArgument));
+    arg->name_or_int = name_or_int;
+    arg->use_ldi = use_ldi;
+
+    trace_pop(ctx);
+
+    return arg;
+}
+
+CtxProcArgumentList* parse_proc_argument_list(ParserContext *ctx) {
+    trace_push(ctx, "proc_argument_list");
+
+    Token lparen;
+    if (next_token_safe(&lparen, ctx, LPAREN)) {
+        lexer_prev(ctx->lex);
+        trace_pop(ctx);
+        return NULL;
+    };
+
+    int loop = 1;
+    Token rparen;
+    if (peek_next_token(&rparen, ctx)) {
+        trace_pop(ctx);
+        return NULL;
+    }
+    else if (rparen.kind == RPAREN) {
+        lexer_next(&rparen, ctx->lex);
+        loop = 0;
+    }
+
+    DynamicArray args = {0};
+
+    while (loop) {
+        CtxProcArgument *arg = parse_proc_argument(ctx);
+        if (ctx->error) {
+            da_free_all(&args);
+            trace_pop(ctx);
+            return NULL;
+        }
+
+        da_append(&args, arg);
+
+        Token peek_token;
+        if (peek_next_token(&peek_token, ctx)) {trace_pop(ctx); return NULL;}
+
+        if (peek_token.kind == COMMA) {
+            next_token_safe(&peek_token, ctx, COMMA);
+            continue;
+        }
+        else if (peek_token.kind == RPAREN) {
+            next_token_safe(&peek_token, ctx, RPAREN);
+            break;
+        }
+        
+        // Error
+        da_free_all(&args);
+        print_token_error(lparen, "Expected comma or right parenthesis");
+        ctx->error = 1;
+        trace_pop(ctx);
+        return NULL;
+    }
+
+    CtxProcArgumentList *arg_list = malloc(sizeof(CtxProcArgumentList));
+    arg_list->arg_count = args.length;
+    arg_list->args = (CtxProcArgument**) args.data;
+
+    trace_pop(ctx);
+
+    return arg_list;
+}
+
+CtxProcCall* parse_proc_call(ParserContext *ctx) {
+    trace_push(ctx, "proc_call");
+
+    size_t saved_index = ctx->lex->index;
+    Token name;
+    if (next_token_safe(&name, ctx, NAME)) {
+        lexer_prev(ctx->lex);
+        trace_pop(ctx);
+        return NULL;
+    }
+
+    CtxProcArgumentList *arg_list = parse_proc_argument_list(ctx);
+    if (ctx->error || arg_list == NULL) {
+        ctx->lex->index = saved_index;
+        trace_pop(ctx);
+        return NULL;
+    }
+
+    CtxProcCall *proc_call = malloc(sizeof(CtxProcCall));
+    proc_call->name = name;
+    proc_call->args = arg_list;
+
+    trace_pop(ctx);
+
+    return proc_call;
+}
+
+
+void free_proc_call(CtxProcCall *proc_call) {
+    free(proc_call->args->args);
+}
+
 
 CtxStatement* parse_statement(ParserContext *ctx) {
     trace_push(ctx, "statement");
 
     CtxStatement *statement = NULL;
+
+    CtxProcCall *proc_call = parse_proc_call(ctx);
+    if (ctx->error) goto done;
+    if (proc_call) {
+        statement = malloc(sizeof(CtxStatement));
+        statement->kind = PROC_CALL;
+        statement->statement.proc_call = proc_call;
+        goto done;
+    } 
 
     CtxInstruction *instruction = parse_instruction(ctx);
     if (ctx->error) goto done;
@@ -391,7 +553,7 @@ CtxStatement* parse_statement(ParserContext *ctx) {
     if (statement == NULL) {
         Token err_token;
         if (peek_next_token(&err_token, ctx) == 0) {
-            print_token_error(err_token, "Expected instruction, local declaration, or loop block");
+            print_token_error(err_token, "Expected instruction, local declaration, loop block, or procedure call");
             ctx->error = 1;
         }
     }
@@ -414,6 +576,9 @@ void free_statement(CtxStatement *statement) {
             break;
         case LOOP_BLOCK:
             free_loop_block(statement->statement.loop_block);
+            break;
+        case PROC_CALL:
+            free_proc_call(statement->statement.proc_call);
             break;
     }
     

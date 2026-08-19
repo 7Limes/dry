@@ -4,7 +4,7 @@
 #include <regex.h>
 
 
-#define TOKEN_COUNT 15
+#define TOKEN_COUNT 16
 #define IGNORED_COUNT 2
 
 
@@ -23,6 +23,7 @@ typedef enum {
     COMMA,
     DOLLAR_SIGN,
     HASHTAG,
+    CARAT,
 
     NAME,
     INT,
