@@ -14,3 +14,23 @@ next_rand(p_dest) {
     modi __rand_value __rand_value __RAND_MODULUS
     sti p_dest __rand_value
 }
+
+
+max(p_dest, a, b) {
+    [ brkle a b
+        sti p_dest a
+        ret
+    ]
+
+    sti p_dest b
+}
+
+
+min(p_dest, a, b) {
+    [ brkge a b
+        sti p_dest a
+        ret
+    ]
+    
+    sti p_dest b
+}
