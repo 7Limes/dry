@@ -136,17 +136,19 @@ int get_constant(int32_t *dest, CompilerContext *ctx, const char *name) {
 
 
 // Returns the amount of space that should be reserved for this variable
-size_t get_var_size(CompilerContext *ctx, const CtxVarDeclaration *var) {
-    int var_size = 1;
+// Returns -1 on failure
+int32_t get_var_size(CompilerContext *ctx, const CtxVarDeclaration *var) {
+    int32_t var_size = 1;
     if (var->is_sized) {
         char *var_size_str = get_token_string(var->size);
         if (var->size.kind == INT) {
             str_to_int(var_size_str, &var_size);
         }
         else {  // Constant name
-            int32_t size_i32;
-            get_constant(&size_i32, ctx, var_size_str);
-            var_size = size_i32;
+            if (get_constant(&var_size, ctx, var_size_str)) {
+                print_token_error(var->size, "Unrecognized constant");
+                var_size = -2;
+            }
         }
         free(var_size_str);
 
@@ -157,8 +159,11 @@ size_t get_var_size(CompilerContext *ctx, const CtxVarDeclaration *var) {
 }
 
 
-VarData *get_var_data(CompilerContext *ctx, const CtxVarDeclaration *var) {
+VarData* get_var_data(CompilerContext *ctx, const CtxVarDeclaration *var) {
     int32_t var_size = get_var_size(ctx, var);
+    if (var_size == -1) {
+        return NULL;
+    }
 
     VarData *var_data = malloc(sizeof(VarData));
     var_data->address = ctx->current_address;
@@ -181,6 +186,11 @@ int record_global(CompilerContext *ctx, CtxDeclaration *global_decl) {
         }
         
         VarData *var_data = get_var_data(ctx, var);
+        if (var_data == NULL) {
+            free(var_name);
+            return 1;
+        }
+
         map_add(&ctx->globals, var_name, var_data);
         ctx->current_address += var_data->size;
 
@@ -379,6 +389,10 @@ int record_locals(CompilerContext *ctx, Map *proc_locals, const char *proc_name,
         char *var_name = get_token_string(var->name);
 
         VarData *var_data = get_var_data(ctx, var);
+        if (var_data == NULL) {
+            return 1;
+        }
+
         map_add(proc_locals, var_name, var_data);
 
         if (proc_name != NULL) {
