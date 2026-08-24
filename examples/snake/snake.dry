@@ -1,0 +1,228 @@
+#width 64
+#height 64
+
+include ".math"
+include ".color"
+include ".string"
+include ".font"
+
+load FONT pack file "code8x8.font"
+
+define MAX_SEGMENTS 128
+define STARTING_SEGMENTS 5
+define REWARD_SEGMENTS 3
+
+define MOVE_TIME 3
+
+define SCORE_X 1
+define SCORE_Y 1
+
+$ (segments[MAX_SEGMENTS], segments_start_index, segment_count, segments_to_add)
+$ (move_timer, head_x, head_y, dir_x, dir_y)
+$ (apple_x, apple_y)
+$ (score)
+
+$ (rng_timer)
+
+pack_pos(p_dest, x, y) {
+    $ (result)
+    muli result x 0x10000
+    add result result y
+    sti p_dest result
+}
+
+unpack_pos(p_x, p_y, pos) {
+    $ (temp)
+    modi temp pos 0x10000
+    sti p_y temp
+    divi temp pos 0x10000
+    sti p_x temp
+}
+
+change_dir {
+    [ brkne UP 1
+        ldi dir_x 0
+        ldi dir_y -1
+        muli rng_timer rng_timer 3
+      brk
+    ]
+    [ brkne DOWN 1
+        ldi dir_x 0
+        ldi dir_y 1
+        muli rng_timer rng_timer 5
+      brk
+    ]
+    [ brkne LEFT 1
+        ldi dir_x -1
+        ldi dir_y 0
+        muli rng_timer rng_timer 7
+      brk
+    ]
+    [ brkne RIGHT 1
+        ldi dir_x 1
+        ldi dir_y 0
+        muli rng_timer rng_timer 13
+      brk
+    ]
+
+    seed_rand(rng_timer)
+}
+
+move_snake {
+    $ (packed_pos)
+    pack_pos(^packed_pos, head_x, head_y)
+
+    $ (next_index)
+    add next_index segments_start_index segment_count
+    modi next_index next_index MAX_SEGMENTS
+
+    $ (p_segments)
+    add p_segments segments next_index
+    sti p_segments packed_pos
+
+    // Move head
+    add head_x head_x dir_x
+    modi head_x head_x WIDTH
+    add head_y head_y dir_y
+    modi head_y head_y HEIGHT
+
+    [ brkne segments_to_add 0
+        inc segments_start_index
+        modi segments_start_index segments_start_index MAX_SEGMENTS
+      brk
+    ]
+    [ brkeq segments_to_add 0
+        dec segments_to_add
+        inc segment_count
+      brk
+    ]
+}
+
+reset {
+    cpy segments_start_index segments
+    ldi segment_count 0
+    ldi segments_to_add STARTING_SEGMENTS
+
+    ldi move_timer MOVE_TIME
+
+    ldi head_x 10
+    ldi head_y 32
+
+    ldi dir_x 1
+    ldi dir_y 0
+
+    ldi apple_x 40
+    ldi apple_y 31
+
+    ldi score 0
+}
+
+collide_snake {
+    $ (i, segment_index, p_segment)
+    ldi i 0
+    [ brkge i segment_count
+        add p_segment i segments_start_index
+        modi p_segment p_segment MAX_SEGMENTS
+        add p_segment p_segment segments
+
+        $ (pos)
+        rdi pos p_segment
+
+        $ (head_pos)
+        pack_pos(^head_pos, head_x, head_y)
+
+        [ brkne head_pos pos
+            // Kill snake
+            reset()
+            ret
+        ]
+
+        inc i
+    ]
+}
+
+move_apple {
+    next_rand(^apple_x)
+    modi apple_x apple_x WIDTH
+
+    next_rand(^apple_y)
+    modi apple_y apple_y HEIGHT
+}
+
+eat_apple {
+    [ brkne head_x apple_x
+        [ brkne head_y apple_y
+            ldi segments_to_add REWARD_SEGMENTS
+            inc score
+            move_apple()
+          brk
+        ]
+      brk
+    ]
+}
+
+draw_snake {
+    hexcolor(^0x00ff00)
+
+    pix head_x head_y
+
+    $ (i, segment_index, p_segment)
+    ldi i 0
+    [ brkge i segment_count
+        add p_segment i segments_start_index
+        modi p_segment p_segment MAX_SEGMENTS
+        add p_segment p_segment segments
+
+        $ (pos)
+        rdi pos p_segment
+
+        $ (seg_x, seg_y)
+        unpack_pos(^seg_x, ^seg_y, pos)
+
+        pix seg_x seg_y
+
+        inc i
+    ]
+}
+
+draw_apple {
+    hexcolor(^0xff0000)
+
+    pix apple_x apple_y
+}
+
+draw_score {
+    $ (score_str[12])
+    int_to_str(^score_str, score)
+
+    hexcolor(^0xffffff)
+
+    draw_text(^score_str, ^FONT, ^8, ^SCORE_X, ^SCORE_Y)
+}
+
+start {
+    seed_rand(^1337)
+
+    reset()
+}
+
+tick {
+    inc rng_timer
+
+    change_dir()
+
+    dec move_timer
+    [ brkne move_timer 0
+        move_snake()
+        collide_snake()
+        eat_apple()
+        ldi move_timer MOVE_TIME
+      brk
+    ]
+    
+    draw_score()
+    draw_snake()
+    draw_apple()
+
+    col 0 0 0  // Clear bg
+}
