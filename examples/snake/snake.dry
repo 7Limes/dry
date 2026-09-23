@@ -152,7 +152,7 @@ move_apple {
 eat_apple {
     [ brkne head_x apple_x
         [ brkne head_y apple_y
-            ldi segments_to_add REWARD_SEGMENTS
+            add segments_to_add segments_to_add REWARD_SEGMENTS
             inc score
             move_apple()
           brk
